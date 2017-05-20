@@ -1,0 +1,194 @@
+A. 
+/** Trigger pour les insertions **/
+
+CREATE OR REPLACE TRIGGER resp_prof
+  BEFORE INSERT ON COURSTRIM
+  FOR EACH ROW
+  
+DECLARE
+  new_TYPE PERSONNE.TYPPERS%type;
+  
+BEGIN
+  SELECT typpers INTO new_TYPE FROM PERSONNE WHERE nas = :NEW.responsable ;
+
+  /** Simple comparaison du type de la personne (E, X, P) **/
+
+  IF (new_TYPE <> 'P') THEN
+    RAISE_APPLICATION_ERROR(-20100, 'cette personne n''est pas professeur');
+  END IF;
+END;
+
+/** Trigger pour les updates **/
+
+CREATE OR REPLACE TRIGGER resp_prof_update
+  BEFORE UPDATE ON COURSTRIM
+  FOR EACH ROW
+  
+DECLARE
+  new_TYPE PERSONNE.TYPPERS%type;
+  
+BEGIN
+  SELECT typpers INTO new_TYPE FROM PERSONNE WHERE nas = :NEW.responsable ;
+  IF (new_TYPE <> 'P') THEN
+    RAISE_APPLICATION_ERROR(-20100, 'cette personne n''est pas professeur');
+  END IF;
+END;
+
+
+
+
+B.
+
+create or replace TRIGGER before_insert_somebody
+BEFORE INSERT ON PERSONNE
+FOR EACH ROW
+BEGIN
+
+/** REGEXP_LIKE compare le matricule au format de référence **/
+
+  IF ((:NEW.TYPPERS = 'X' OR :NEW.TYPPERS = 'P') AND NOT REGEXP_LIKE(:NEW.PMATRICULE, 'p[0-9]{3,6}$'))
+  THEN
+	RAISE_APPLICATION_ERROR(-20101, 'Matricule employé au format incorrect');
+  END IF;
+  IF (:NEW.TYPPERS = 'E' AND NOT REGEXP_LIKE(:NEW.MATRICULE, '[0-9]{3,7}$'))
+  THEN
+	RAISE_APPLICATION_ERROR(-20102, 'Matricule étudiant au format incorrect');
+  END IF;
+END;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+C. 
+
+CREATE OR REPLACE TRIGGER new_capacite 
+BEFORE UPDATE ON SECTION
+FOR EACH ROW 
+
+BEGIN 
+
+       IF (:NEW.capacite > :OLD.capacite) 
+       THEN RAISE_APPLICATION_ERROR(-20100, 'la capacité initiale n''est pas respectée');
+END IF; 
+
+END; 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+D. 
+
+create or replace TRIGGER prerequisite_check
+BEFORE INSERT ON INSCRIPTION
+FOR EACH ROW
+
+DECLARE
+  prereqCount INT;
+  prereqCompCount INT;
+ 
+
+BEGIN
+
+/** concernPrer donne la liste des sigles des cours prérequis au cours de l'insertion **/
+
+WITH concernPrer AS
+(SELECT LEPREREQUIS
+FROM PREREQUIS
+WHERE SIGLE = :NEW.SIGLE)
+
+/** on stocke le nombre de prérequis qu'a ce cours **/
+
+SELECT COUNT(*) INTO prereqCount FROM concernPrer;
+
+/** on stocke le nombre de prérequis complétés par l'étudiant **/
+
+SELECT COUNT(SIGLE) INTO prereqCompCount
+FROM INSCRIPTION I
+WHERE  :NEW.MATRICULE = I.MATRICULE
+AND SIGLE <> 'F'
+AND SIGLE = ANY (SELECT LEPREREQUIS
+FROM PREREQUIS
+WHERE SIGLE = :NEW.SIGLE);
+
+/** si les deux compteurs sont différents, alors l'étudiant n'a pas tout ses prérequis **/
+
+IF (prereqCount <> prereqCompCount)
+THEN
+  RAISE_APPLICATION_ERROR(-20103, 'Ne possède pas tous les prérequis');
+END IF;
+
+END;
+
+
+
+
+
+E.
+
+create or replace TRIGGER moyenne_check
+  BEFORE INSERT OR UPDATE ON INSCRIPTION
+  FOR EACH ROW
+ 
+DECLARE
+  pond INT;
+ 
+BEGIN
+
+/** marks donne dans une premiere colonne les notes de l'étudiant pour ce cours et dans une deuxième colonne les pondérations associées à ces notes **/
+  WITH marks AS
+  (SELECT LANOTE, PONDERATION
+  FROM NOTE N, EPREUVE E
+  WHERE N.MATRICULE = :NEW.MATRICULE
+  AND E.SIGLE = :NEW.SIGLE
+  AND E.TRIM = :NEW.TRIM
+  AND N.IDEPR = E.IDEPR
+  GROUP BY LANOTE, PONDERATION)
+ 
+
+ /** On somme les pondérations **/
+  SELECT SUM(PONDERATION) INTO pond FROM marks;
+ 
+ /** si la somme n'est pas égale à 100, la notation de l'élève pour le cours est incorrecte **/
+ 
+  IF ( pond <> 100) THEN
+  RAISE_APPLICATION_ERROR(-20104, 'Pondération des épreuves incorrecte');
+  END IF;
+END
+
+(malheureusement pas fini...)
+
